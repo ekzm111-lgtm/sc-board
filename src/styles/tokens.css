@@ -1,0 +1,23 @@
+/* Pretendard 웹폰트 로드 */
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
+
+:root {
+  --background: #F8FAFC; /* Slate 50: 눈이 편안한 밝은 중간톤 */
+  --foreground: #0F172A; /* Slate 900: 가독성 높은 짙은 본문 */
+
+  /* 교육용 단정하고 신뢰감 있는 브랜드 포인트 컬러 */
+  --primary: #3B82F6;
+  --primary-hover: #2563EB;
+  --primary-subtle: #EFF6FF;
+
+  /* 중립 카드 및 보더 */
+  --card-bg: #FFFFFF;
+  --card-border: #E2E8F0;
+  --muted: #64748B;
+  --muted-light: #F1F5F9;
+
+  /* 경고 및 상태 */
+  --danger: #EF4444;
+  --success: #10B981;
+  --warning: #F59E0B;
+}
