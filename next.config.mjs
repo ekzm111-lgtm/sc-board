@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export', // Next.js 정적 빌드 -> out 폴더 생성
+  output: 'export',
+  trailingSlash: true, // Cloudflare Pages에서 /admin, /about 등 서브 경로 404 원천 방지
   reactStrictMode: true,
   images: {
     unoptimized: true,
