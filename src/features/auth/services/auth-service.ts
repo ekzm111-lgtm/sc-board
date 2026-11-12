@@ -1,9 +1,63 @@
 import { createClient } from '@/server/supabase/client';
-import { UserProfile, StudentInvitation } from '@/types/database';
+import { UserProfile } from '@/types/database';
 
 export class AuthService {
   private static get supabase() {
     return createClient();
+  }
+
+  /**
+   * 이메일/아이디 및 비밀번호로 로그인 (관리자 및 일반 계정)
+   */
+  static async signInWithPassword(emailOrId: string, password: string) {
+    const supabase = this.supabase;
+    // 아이디가 'admin'인 경우 학교 도메인 이메일로 자동 변환
+    let email = emailOrId.trim();
+    if (!email.includes('@')) {
+      email = `${email}@daeshin.ms.kr`;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) throw error;
+
+    // 프로필 확인 및 없으면 생성
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
+
+      if (!profile) {
+        // admin인 경우 자동 admin 부여
+        const isAdmin = email.startsWith('admin@');
+        await supabase.from('users').insert({
+          id: data.user.id,
+          email: data.user.email,
+          full_name: isAdmin ? '최고 관리자' : (data.user.email?.split('@')[0] || '사용자'),
+          role: isAdmin ? 'admin' : 'student',
+          approved: isAdmin ? true : false,
+        });
+      }
+    }
+
+    return data;
+  }
+
+  /**
+   * 비밀번호 변경 (관리자 등 본인 계정)
+   */
+  static async updatePassword(newPassword: string) {
+    const supabase = this.supabase;
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+    });
+    if (error) throw error;
+    return data;
   }
 
   /**
@@ -39,7 +93,7 @@ export class AuthService {
   }
 
   /**
-   * 현재 로그인된 사용자 세션 및 프로필 조회
+   * 현재 프로필 조회
    */
   static async getCurrentProfile(): Promise<{ user: any; profile: UserProfile | null }> {
     const supabase = this.supabase;
@@ -60,77 +114,5 @@ export class AuthService {
     }
 
     return { user, profile: profile || null };
-  }
-
-  /**
-   * 로그인 후 프로필 동기화 및 학생 초대 명단 매칭
-   */
-  static async syncProfile(user: any, requestedRole: 'teacher' | 'student' = 'student'): Promise<UserProfile> {
-    const supabase = this.supabase;
-    const email = user.email || '';
-    const fullName = user.user_metadata?.full_name || user.user_metadata?.name || email.split('@')[0];
-    const avatarUrl = user.user_metadata?.avatar_url || null;
-
-    // 1. 이미 존재하는 프로필인지 확인
-    const { data: existingProfile } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (existingProfile) {
-      return existingProfile as UserProfile;
-    }
-
-    // 2. 학생 초대 명단 조회
-    const { data: invitation } = await supabase
-      .from('student_invitations')
-      .select('*')
-      .eq('email', email)
-      .single();
-
-    let role = requestedRole;
-    let approved = false;
-    let studentNumber = null;
-
-    if (invitation) {
-      // 사전 등록된 학생인 경우 자동 매칭 및 승인 완료
-      role = 'student';
-      approved = true;
-      studentNumber = invitation.student_number;
-    } else if (requestedRole === 'teacher') {
-      // 교사는 신청 후 관리자 승인 대기 상태
-      role = 'teacher';
-      approved = false;
-    }
-
-    // 3. 새 프로필 삽입
-    const { data: newProfile, error: insertError } = await supabase
-      .from('users')
-      .insert({
-        id: user.id,
-        email,
-        full_name: fullName,
-        role,
-        approved,
-        student_number: studentNumber,
-        avatar_url: avatarUrl,
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      throw insertError;
-    }
-
-    // 4. 초대를 Claim 처리
-    if (invitation) {
-      await supabase
-        .from('student_invitations')
-        .update({ is_claimed: true, claimed_user_id: user.id })
-        .eq('id', invitation.id);
-    }
-
-    return newProfile as UserProfile;
   }
 }
