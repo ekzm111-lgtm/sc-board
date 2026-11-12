@@ -182,7 +182,7 @@ export default function DashboardPage() {
               {boards.map((board) => (
                 <Link
                   key={board.id}
-                  href={`/boards/${board.id}`}
+                  href={`/board?id=${board.id}`}
                   className="group bg-white p-6 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all flex flex-col justify-between h-48"
                 >
                   <div>
