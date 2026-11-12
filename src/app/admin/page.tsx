@@ -2,21 +2,20 @@
 
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/server/supabase/client';
 import { AuthService } from '@/features/auth/services/auth-service';
 import { UserProfile, StudentInvitation } from '@/types/database';
-import { ShieldCheck, Users, Check, X, KeyRound, UserPlus, LogOut, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
+import { Users, Check, X, KeyRound, UserPlus, LogOut, ArrowLeft, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminPage() {
-  const { user, profile, loading, signOut, isAdmin } = useAuth();
+  const { user, profile, loading, signOut } = useAuth();
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'teachers' | 'students' | 'password'>('teachers');
   const [teachers, setTeachers] = useState<UserProfile[]>([]);
   const [invitations, setInvitations] = useState<StudentInvitation[]>([]);
-  const [loadingData, setLoadingData] = useState(true);
 
   // 비밀번호 변경 폼
   const [newPassword, setNewPassword] = useState('');
@@ -31,7 +30,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (!loading && (!user || profile?.role !== 'admin')) {
-      // 관리자가 아니면 대시보드로 리다이렉트
       if (user && profile && profile.role !== 'admin') {
         router.push('/dashboard');
       } else if (!user) {
@@ -40,10 +38,8 @@ export default function AdminPage() {
     }
   }, [user, profile, loading, router]);
 
-  const fetchData = async () => {
-    setLoadingData(true);
+  const fetchData = useCallback(async () => {
     try {
-      // 1. 교사 목록 조회
       const { data: teachersData } = await supabase
         .from('users')
         .select('*')
@@ -51,7 +47,6 @@ export default function AdminPage() {
         .order('created_at', { ascending: false });
       setTeachers(teachersData || []);
 
-      // 2. 학생 초대 명단 조회
       const { data: invitationsData } = await supabase
         .from('student_invitations')
         .select('*')
@@ -59,38 +54,27 @@ export default function AdminPage() {
       setInvitations(invitationsData || []);
     } catch (err) {
       console.error('Error fetching admin data:', err);
-    } finally {
-      setLoadingData(false);
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
     if (user && profile?.role === 'admin') {
       fetchData();
     }
-  }, [user, profile]);
+  }, [user, profile, fetchData]);
 
-  // 교사 승인 처리
   const handleApproveTeacher = async (teacherId: string, approve: boolean) => {
     try {
-      if (approve) {
-        await supabase
-          .from('users')
-          .update({ approved: true })
-          .eq('id', teacherId);
-      } else {
-        await supabase
-          .from('users')
-          .update({ approved: false })
-          .eq('id', teacherId);
-      }
+      await supabase
+        .from('users')
+        .update({ approved: approve })
+        .eq('id', teacherId);
       fetchData();
     } catch (err) {
       console.error('Teacher approve error:', err);
     }
   };
 
-  // 비밀번호 변경 처리
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPassword.length < 6) {
@@ -103,8 +87,8 @@ export default function AdminPage() {
     }
 
     try {
-      await AuthService.updatePassword(newPassword);
-      setPasswordMsg({ type: 'success', text: '관리자 비밀번호가 성공적으로 변경되었습니다!' });
+      AuthService.changeAdminPassword(newPassword);
+      setPasswordMsg({ type: 'success', text: '관리자 비밀번호가 성공적으로 변경되었습니다.' });
       setNewPassword('');
       setConfirmPassword('');
     } catch (err: any) {
@@ -112,7 +96,6 @@ export default function AdminPage() {
     }
   };
 
-  // 학생 일괄 등록 처리
   const handleRegisterStudents = async (e: React.FormEvent) => {
     e.preventDefault();
     setCsvMsg(null);
@@ -150,7 +133,7 @@ export default function AdminPage() {
         .upsert(records, { onConflict: 'email' });
 
       if (error) throw error;
-      setCsvMsg(`${records.length}명의 학생 명단이 성공적으로 등록되었습니다!`);
+      setCsvMsg(`${records.length}명의 학생 명단이 등록되었습니다.`);
       fetchData();
     } catch (err: any) {
       setCsvMsg(`등록 실패: ${err.message}`);
@@ -158,17 +141,17 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50/70 flex flex-col font-sans antialiased text-slate-900">
       {/* 관리자 헤더 */}
       <header className="bg-slate-900 text-white sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center font-bold text-white text-sm">
+        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-medium text-white text-xs">
               관
             </div>
-            <div>
-              <span className="font-bold text-base tracking-tight">서귀포대신중학교 최고 관리자</span>
-              <span className="ml-2 text-xs px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800">
+            <div className="flex items-center gap-2.5">
+              <span className="font-semibold text-sm tracking-tight">서귀포대신중학교 관리자</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/10 text-slate-300 border border-white/10 font-normal">
                 Admin Panel
               </span>
             </div>
@@ -177,14 +160,14 @@ export default function AdminPage() {
           <div className="flex items-center gap-4">
             <Link
               href="/dashboard"
-              className="text-xs text-slate-300 hover:text-white flex items-center gap-1 transition-colors"
+              className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              일반 대시보드 가기
+              일반 대시보드
             </Link>
             <button
               onClick={() => { signOut(); router.push('/login'); }}
-              className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors"
+              className="p-2 text-slate-400 hover:text-white rounded-lg transition-colors"
               title="로그아웃"
             >
               <LogOut className="w-4 h-4" />
@@ -194,105 +177,104 @@ export default function AdminPage() {
       </header>
 
       {/* 탭 네비게이션 */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-6xl mx-auto px-4 flex gap-6">
+      <div className="bg-white border-b border-slate-100">
+        <div className="max-w-6xl mx-auto px-6 flex gap-8">
           <button
             onClick={() => setActiveTab('teachers')}
-            className={`py-3.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all ${
+            className={`py-4 text-xs font-medium border-b-2 flex items-center gap-2 transition-all ${
               activeTab === 'teachers'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-slate-900 text-slate-900'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <Users className="w-4 h-4" />
+            <Users className="w-4 h-4 stroke-[1.75]" />
             교사 승인 관리 ({teachers.filter(t => !t.approved).length}건 대기)
           </button>
           <button
             onClick={() => setActiveTab('students')}
-            className={`py-3.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all ${
+            className={`py-4 text-xs font-medium border-b-2 flex items-center gap-2 transition-all ${
               activeTab === 'students'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-slate-900 text-slate-900'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <UserPlus className="w-4 h-4" />
+            <UserPlus className="w-4 h-4 stroke-[1.75]" />
             학생 일괄 초대 명단 ({invitations.length}명)
           </button>
           <button
             onClick={() => setActiveTab('password')}
-            className={`py-3.5 text-sm font-semibold border-b-2 flex items-center gap-2 transition-all ${
+            className={`py-4 text-xs font-medium border-b-2 flex items-center gap-2 transition-all ${
               activeTab === 'password'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-slate-900 text-slate-900'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <KeyRound className="w-4 h-4" />
+            <KeyRound className="w-4 h-4 stroke-[1.75]" />
             관리자 비밀번호 변경
           </button>
         </div>
       </div>
 
-      {/* 메인 콘텐츠 영역 */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 py-8">
-        {/* 1. 교사 승인 관리 탭 */}
+      {/* 메인 콘텐츠 영역 (호흡이 긴 여백과 얇은 테두리) */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-12">
         {activeTab === 'teachers' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">교사 가입 승인</h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  학교 구글 계정으로 가입 신청한 선생님들의 보드 생성 권한을 승인합니다.
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-slate-900">교사 가입 승인</h2>
+                <p className="text-xs text-slate-600 font-normal">
+                  가입 신청한 선생님들의 보드 생성 권한을 승인합니다.
                 </p>
               </div>
               <button
                 onClick={fetchData}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200/80 rounded-lg hover:bg-slate-50 transition-colors"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 새로고침
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
+            <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+              <table className="min-w-full divide-y divide-slate-100">
+                <thead className="bg-slate-50/50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">교사 성명</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">이메일</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">신청 일시</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">상태</th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500">승인 조치</th>
+                    <th className="px-6 py-3.5 text-left text-xs font-medium text-slate-500">교사 성명</th>
+                    <th className="px-6 py-3.5 text-left text-xs font-medium text-slate-500">이메일</th>
+                    <th className="px-6 py-3.5 text-left text-xs font-medium text-slate-500">신청 일시</th>
+                    <th className="px-6 py-3.5 text-left text-xs font-medium text-slate-500">상태</th>
+                    <th className="px-6 py-3.5 text-right text-xs font-medium text-slate-500">조치</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 text-sm">
+                <tbody className="divide-y divide-slate-100 text-xs">
                   {teachers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-slate-400">
+                      <td colSpan={5} className="px-6 py-10 text-center text-slate-400 font-normal">
                         가입 신청한 교사 계정이 없습니다.
                       </td>
                     </tr>
                   ) : (
                     teachers.map((teacher) => (
-                      <tr key={teacher.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-4 font-semibold text-slate-900">{teacher.full_name}</td>
+                      <tr key={teacher.id} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4 font-medium text-slate-900">{teacher.full_name}</td>
                         <td className="px-6 py-4 text-slate-600">{teacher.email}</td>
-                        <td className="px-6 py-4 text-slate-400 text-xs">
+                        <td className="px-6 py-4 text-slate-400 font-normal">
                           {new Date(teacher.created_at).toLocaleDateString()}
                         </td>
                         <td className="px-6 py-4">
-                          <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                          <span className={`inline-flex px-2 py-0.5 text-[11px] font-normal rounded-md border ${
                             teacher.approved
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-200'
+                              ? 'bg-slate-50 text-slate-700 border-slate-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
                           }`}>
-                            {teacher.approved ? '승인 완료' : '승인 대기'}
+                            {teacher.approved ? '승인 완료' : '대기 중'}
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right space-x-2">
                           {!teacher.approved ? (
                             <button
                               onClick={() => handleApproveTeacher(teacher.id, true)}
-                              className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-medium transition-colors"
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium transition-colors"
                             >
                               <Check className="w-3.5 h-3.5" />
                               승인
@@ -300,7 +282,7 @@ export default function AdminPage() {
                           ) : (
                             <button
                               onClick={() => handleApproveTeacher(teacher.id, false)}
-                              className="inline-flex items-center gap-1 px-3 py-1 bg-slate-100 hover:bg-red-50 hover:text-red-600 text-slate-600 rounded-lg text-xs font-medium transition-colors"
+                              className="inline-flex items-center gap-1 px-3 py-1 bg-white hover:bg-slate-50 text-slate-600 border border-slate-200 rounded-lg text-xs font-normal transition-colors"
                             >
                               <X className="w-3.5 h-3.5" />
                               승인 취소
@@ -316,75 +298,74 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* 2. 학생 일괄 등록 탭 */}
         {activeTab === 'students' && (
           <div className="space-y-6">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">학생 명단 일괄 등록 (사전 초대)</h2>
-              <p className="text-sm text-slate-500 mt-1">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold text-slate-900">학생 명단 일괄 등록</h2>
+              <p className="text-xs text-slate-600 font-normal">
                 등록된 학생만 학교 구글 계정으로 로그인할 수 있습니다. 엑셀에서 복사하여 아래에 붙여넣으세요.
               </p>
             </div>
 
-            <form onSubmit={handleRegisterStudents} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  명단 입력 형식: <code className="text-indigo-600 font-mono">학번, 이름, 이메일</code> (줄바꿈 구분)
+            <form onSubmit={handleRegisterStudents} className="bg-white p-8 rounded-2xl border border-slate-100 space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-700">
+                  명단 입력 형식: <code className="text-slate-900 font-mono font-semibold">학번, 이름, 이메일</code> (줄바꿈 구분)
                 </label>
                 <textarea
                   rows={6}
                   value={studentCsv}
                   onChange={(e) => setStudentCsv(e.target.value)}
-                  className="w-full p-3 border border-slate-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full p-3.5 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:border-slate-400 leading-relaxed"
                   placeholder="10101, 홍길동, student1@daeshin.ms.kr"
                 />
               </div>
 
               {csvMsg && (
-                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-medium text-indigo-700">
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 font-normal">
                   {csvMsg}
                 </div>
               )}
 
               <button
                 type="submit"
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl transition-all shadow-xs"
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs rounded-xl transition-colors"
               >
                 학생 명단 일괄 저장하기
               </button>
             </form>
 
-            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-              <div className="p-4 border-b border-slate-200 font-semibold text-sm text-slate-800">
+            <div className="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 font-medium text-xs text-slate-800">
                 등록된 학생 명단 ({invitations.length}명)
               </div>
-              <table className="min-w-full divide-y divide-slate-200">
-                <thead className="bg-slate-50">
+              <table className="min-w-full divide-y divide-slate-100 text-xs">
+                <thead className="bg-slate-50/50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">학번</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">이름</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">이메일</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500">로그인 여부</th>
+                    <th className="px-6 py-3 text-left font-medium text-slate-500">학번</th>
+                    <th className="px-6 py-3 text-left font-medium text-slate-500">이름</th>
+                    <th className="px-6 py-3 text-left font-medium text-slate-500">이메일</th>
+                    <th className="px-6 py-3 text-left font-medium text-slate-500">상태</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200 text-sm">
+                <tbody className="divide-y divide-slate-100">
                   {invitations.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-slate-400">
-                        등록된 학생 명단이 없습니다. 위 입력창에서 등록해 주세요.
+                      <td colSpan={4} className="px-6 py-8 text-center text-slate-400 font-normal">
+                        등록된 학생 명단이 없습니다.
                       </td>
                     </tr>
                   ) : (
                     invitations.slice(0, 10).map((inv) => (
-                      <tr key={inv.id} className="hover:bg-slate-50">
-                        <td className="px-6 py-3 font-mono font-semibold text-slate-900">{inv.student_number}</td>
-                        <td className="px-6 py-3 text-slate-800">{inv.full_name}</td>
+                      <tr key={inv.id} className="hover:bg-slate-50/50">
+                        <td className="px-6 py-3 font-mono text-slate-900">{inv.student_number}</td>
+                        <td className="px-6 py-3 text-slate-800 font-medium">{inv.full_name}</td>
                         <td className="px-6 py-3 text-slate-600">{inv.email}</td>
                         <td className="px-6 py-3">
-                          <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                          <span className={`inline-flex px-2 py-0.5 text-[11px] font-normal rounded-md border ${
                             inv.is_claimed
-                              ? 'bg-indigo-50 text-indigo-700'
-                              : 'bg-slate-100 text-slate-500'
+                              ? 'bg-slate-50 text-slate-700 border-slate-200'
+                              : 'bg-slate-100 text-slate-500 border-slate-200'
                           }`}>
                             {inv.is_claimed ? '연동 완료' : '미접속'}
                           </span>
@@ -398,30 +379,25 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* 3. 비밀번호 변경 탭 */}
         {activeTab === 'password' && (
-          <div className="max-w-md bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6">
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">관리자 비밀번호 변경</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                기본 비밀번호(12345)를 원하시는 안전한 비밀번호로 변경하세요.
+          <div className="max-w-md bg-white p-8 rounded-2xl border border-slate-100 space-y-6">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-slate-900">관리자 비밀번호 변경</h2>
+              <p className="text-xs text-slate-600 font-normal">
+                기본 비밀번호(12345)를 안전한 비밀번호로 변경하세요.
               </p>
             </div>
 
             {passwordMsg && (
-              <div className={`p-3 rounded-lg text-xs font-medium flex items-center gap-2 ${
-                passwordMsg.type === 'success'
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-red-50 text-red-700 border border-red-200'
-              }`}>
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-slate-500" />
                 <span>{passwordMsg.text}</span>
               </div>
             )}
 
             <form onSubmit={handleUpdatePassword} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-700">
                   새 비밀번호 (6자 이상)
                 </label>
                 <input
@@ -430,12 +406,12 @@ export default function AdminPage() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                   placeholder="새 비밀번호 입력"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-400"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-medium text-slate-700">
                   새 비밀번호 확인
                 </label>
                 <input
@@ -444,13 +420,13 @@ export default function AdminPage() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   placeholder="새 비밀번호 다시 입력"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-slate-400"
                 />
               </div>
 
               <button
                 type="submit"
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm rounded-xl transition-all shadow-xs"
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs rounded-xl transition-colors"
               >
                 비밀번호 변경 저장
               </button>

@@ -1,23 +1,23 @@
-/* Pretendard 웹폰트 로드 */
 @import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css");
 
 :root {
-  --background: #F8FAFC; /* Slate 50: 눈이 편안한 밝은 중간톤 */
-  --foreground: #0F172A; /* Slate 900: 가독성 높은 짙은 본문 */
+  /* 차분한 모노톤 베이스 */
+  --background: #F8FAFC; /* Slate 50 */
+  --foreground: #0F172A; /* Slate 900 */
 
-  /* 교육용 단정하고 신뢰감 있는 브랜드 포인트 컬러 */
-  --primary: #3B82F6;
-  --primary-hover: #2563EB;
-  --primary-subtle: #EFF6FF;
+  /* 차분한 딥 모노톤 액센트 */
+  --accent: #1E293B;       /* Slate 800 */
+  --accent-hover: #0F172A; /* Slate 900 */
+  --accent-subtle: #F1F5F9;/* Slate 100 */
 
-  /* 중립 카드 및 보더 */
+  /* 얇고 미세한 테두리 및 카드 배경 */
   --card-bg: #FFFFFF;
-  --card-border: #E2E8F0;
-  --muted: #64748B;
-  --muted-light: #F1F5F9;
+  --card-border: #F1F5F9;   /* Slate 100: 미세하고 가벼운 테두리 */
+  --card-border-subtle: #E2E8F0; /* Slate 200 */
 
-  /* 경고 및 상태 */
-  --danger: #EF4444;
-  --success: #10B981;
-  --warning: #F59E0B;
+  /* 본문 텍스트 */
+  --text-primary: #0F172A;  /* Slate 900 */
+  --text-body: #475569;     /* Slate 600: 눈이 편안한 세련된 본문 */
+  --text-muted: #64748B;    /* Slate 500 */
+  --text-subtle: #94A3B8;   /* Slate 400 */
 }

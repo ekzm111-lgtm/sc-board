@@ -1,17 +1,89 @@
 import { createClient } from '@/server/supabase/client';
 import { UserProfile } from '@/types/database';
 
+const ADMIN_STORAGE_KEY = 'school_board_admin_auth';
+const ADMIN_PW_KEY = 'school_board_admin_pw';
+
 export class AuthService {
   private static get supabase() {
     return createClient();
   }
 
   /**
-   * 이메일/아이디 및 비밀번호로 로그인 (관리자 및 일반 계정)
+   * 관리자 직통 인증 (admin / 12345 지원 및 커스텀 비밀번호)
+   */
+  static verifyAdmin(username: string, password: string): boolean {
+    const cleanUser = username.trim();
+    if (cleanUser !== 'admin' && cleanUser !== 'admin@daeshin.ms.kr') {
+      return false;
+    }
+
+    // 변경된 비밀번호가 있는지 확인 (기본값: 12345)
+    let savedPw = '12345';
+    if (typeof window !== 'undefined') {
+      savedPw = localStorage.getItem(ADMIN_PW_KEY) || '12345';
+    }
+
+    if (password === savedPw) {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(ADMIN_STORAGE_KEY, JSON.stringify({
+          id: 'admin-master',
+          email: 'admin@daeshin.ms.kr',
+          full_name: '최고 관리자',
+          role: 'admin',
+          approved: true,
+          authenticated_at: new Date().toISOString()
+        }));
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * 관리자 세션 체크
+   */
+  static getAdminSession(): UserProfile | null {
+    if (typeof window === 'undefined') return null;
+    const session = sessionStorage.getItem(ADMIN_STORAGE_KEY);
+    if (!session) return null;
+    try {
+      return JSON.parse(session);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 관리자 비밀번호 변경
+   */
+  static changeAdminPassword(newPassword: string) {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(ADMIN_PW_KEY, newPassword);
+    }
+  }
+
+  /**
+   * 관리자 로그아웃
+   */
+  static signOutAdmin() {
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem(ADMIN_STORAGE_KEY);
+    }
+  }
+
+  /**
+   * 일반 아이디/비밀번호 로그인
    */
   static async signInWithPassword(emailOrId: string, password: string) {
+    // 1. 관리자 계정 직통 체크 (admin / 12345)
+    if (this.verifyAdmin(emailOrId, password)) {
+      return { user: { email: 'admin@daeshin.ms.kr' }, isAdmin: true };
+    }
+
+    // 2. 일반 계정 Supabase 인증
     const supabase = this.supabase;
-    // 아이디가 'admin'인 경우 학교 도메인 이메일로 자동 변환
     let email = emailOrId.trim();
     if (!email.includes('@')) {
       email = `${email}@daeshin.ms.kr`;
@@ -23,59 +95,21 @@ export class AuthService {
     });
 
     if (error) throw error;
-
-    // 프로필 확인 및 없으면 생성
-    if (data.user) {
-      const { data: profile } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', data.user.id)
-        .single();
-
-      if (!profile) {
-        // admin인 경우 자동 admin 부여
-        const isAdmin = email.startsWith('admin@');
-        await supabase.from('users').insert({
-          id: data.user.id,
-          email: data.user.email,
-          full_name: isAdmin ? '최고 관리자' : (data.user.email?.split('@')[0] || '사용자'),
-          role: isAdmin ? 'admin' : 'student',
-          approved: isAdmin ? true : false,
-        });
-      }
-    }
-
     return data;
   }
 
   /**
-   * 비밀번호 변경 (관리자 등 본인 계정)
-   */
-  static async updatePassword(newPassword: string) {
-    const supabase = this.supabase;
-    const { data, error } = await supabase.auth.updateUser({
-      password: newPassword,
-    });
-    if (error) throw error;
-    return data;
-  }
-
-  /**
-   * 학교 구글 계정으로 로그인 (OAuth)
+   * 구글 로그인
    */
   static async signInWithGoogle(redirectTo?: string) {
     const supabase = this.supabase;
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const callbackUrl = `${origin}/auth/callback${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`;
+    const callbackUrl = `${origin}/auth/callback/${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ''}`;
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: callbackUrl,
-        queryParams: {
-          access_type: 'offline',
-          prompt: 'consent',
-        },
       },
     });
 
@@ -87,32 +121,12 @@ export class AuthService {
    * 로그아웃
    */
   static async signOut() {
+    this.signOutAdmin();
     const supabase = this.supabase;
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-  }
-
-  /**
-   * 현재 프로필 조회
-   */
-  static async getCurrentProfile(): Promise<{ user: any; profile: UserProfile | null }> {
-    const supabase = this.supabase;
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return { user: null, profile: null };
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      // 무시
     }
-
-    const { data: profile, error: profileError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', user.id)
-      .single();
-
-    if (profileError && profileError.code !== 'PGRST116') {
-      console.error('Error fetching profile:', profileError);
-    }
-
-    return { user, profile: profile || null };
   }
 }

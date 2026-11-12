@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/server/supabase/client';
+import { AuthService } from '@/features/auth/services/auth-service';
 import { UserProfile } from '@/types/database';
 
 export function useAuth() {
@@ -12,6 +13,16 @@ export function useAuth() {
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
+    // 1. 관리자 마스터 세션 확인
+    const adminSession = AuthService.getAdminSession();
+    if (adminSession) {
+      setUser({ id: 'admin-master', email: 'admin@daeshin.ms.kr' });
+      setProfile(adminSession);
+      setLoading(false);
+      return;
+    }
+
+    // 2. 일반 Supabase 유저 세션 확인
     async function loadUser() {
       try {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
@@ -63,7 +74,7 @@ export function useAuth() {
   }, [supabase]);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await AuthService.signOut();
     setUser(null);
     setProfile(null);
   };
