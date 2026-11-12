@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/server/supabase/client';
 import { ClassRoom, BoardLayout } from '@/types/database';
-import { ArrowLeft, LayoutGrid, Columns, Move, Lock, ShieldCheck, Check } from 'lucide-react';
+import { ArrowLeft, LayoutGrid, Columns, Move, Lock, ShieldCheck, Check, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function NewBoardPage() {
@@ -22,6 +22,7 @@ export default function NewBoardPage() {
 
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -33,26 +34,28 @@ export default function NewBoardPage() {
 
   useEffect(() => {
     async function loadClasses() {
-      if (!user) return;
-      const { data } = await supabase.from('classes').select('*');
-      setClasses(data || []);
-      if (data && data.length > 0) {
-        setClassId(data[0].id);
+      try {
+        const { data } = await supabase.from('classes').select('*');
+        setClasses(data || []);
+      } catch (e) {
+        // 무시
       }
     }
-    if (user) {
-      loadClasses();
-    }
-  }, [user, supabase]);
+    loadClasses();
+  }, [supabase]);
 
   const handleCreateBoard = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || isSubmitting) return;
+    if (isSubmitting) return;
+    setErrorMsg(null);
 
     try {
       setIsSubmitting(true);
       const newBoardId = crypto.randomUUID();
-      const creatorId = user.id === 'admin-master' ? '00000000-0000-0000-0000-000000000000' : user.id;
+
+      // creatorId가 유효한 UUID인지 검사 (admin-master 등은 null 처리)
+      const isUuid = user?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
+      const creatorId = isUuid ? user.id : null;
 
       // 1. 보드 생성
       const { error: boardErr } = await supabase.from('boards').insert({
@@ -60,7 +63,7 @@ export default function NewBoardPage() {
         title: title.trim(),
         description: description.trim() || null,
         layout,
-        class_id: classId || null,
+        class_id: classId.trim() ? classId.trim() : null,
         created_by: creatorId,
         is_locked: isLocked,
         require_approval: requireApproval,
@@ -68,7 +71,11 @@ export default function NewBoardPage() {
       });
 
       if (boardErr) {
-        console.warn('Board insert notice:', boardErr);
+        throw new Error(
+          boardErr.code === '42501'
+            ? '데이터베이스 권한(RLS) 제한으로 보드 생성이 차단되었습니다. 아래 안내를 확인해 주세요.'
+            : boardErr.message
+        );
       }
 
       // 2. 컬럼형(shelf)인 경우 기본 수업 컬럼 3개 자동 추가
@@ -80,19 +87,20 @@ export default function NewBoardPage() {
         ]);
       }
 
-      // 보드 상세 페이지로 이동
-      router.push(`/board?id=${newBoardId}`);
-    } catch (err) {
+      // 성공 시 보드 상세 페이지로 이동
+      window.location.href = `/board/?id=${newBoardId}`;
+    } catch (err: any) {
       console.error('Error creating board:', err);
+      setErrorMsg(err.message || '보드 생성 중 오류가 발생했습니다.');
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 flex flex-col font-sans antialiased text-slate-900">
+    <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans antialiased text-slate-900 selection:bg-slate-200">
       {/* 헤더 */}
-      <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-40">
-        <div className="max-w-4xl mx-auto px-6 h-20 flex items-center justify-between">
+      <header className="bg-white/90 backdrop-blur-md border-b border-slate-200/70 sticky top-0 z-40">
+        <div className="max-w-4xl mx-auto px-6 h-18 flex items-center justify-between">
           <Link
             href="/dashboard"
             className="inline-flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900 transition-colors"
@@ -108,16 +116,33 @@ export default function NewBoardPage() {
       </header>
 
       {/* 메인 폼 */}
-      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-12">
-        <form onSubmit={handleCreateBoard} className="bg-white p-8 sm:p-10 rounded-2xl border border-slate-100 space-y-8">
+      <main className="flex-1 max-w-2xl w-full mx-auto px-6 py-10">
+        <form onSubmit={handleCreateBoard} className="bg-white p-8 sm:p-10 rounded-2xl border border-slate-200/80 shadow-sm space-y-8">
           <div className="space-y-1">
             <h1 className="text-xl font-semibold text-slate-900 tracking-tight">
               수업 보드 설정
             </h1>
-            <p className="text-xs text-slate-600 font-normal">
+            <p className="text-xs text-slate-500 font-normal">
               보드의 주제와 수업 형태에 맞는 레이아웃을 선택하세요.
             </p>
           </div>
+
+          {errorMsg && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl space-y-2 text-xs text-red-700">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-semibold">보드 생성 실패</p>
+                  <p className="leading-relaxed">{errorMsg}</p>
+                </div>
+              </div>
+              {errorMsg.includes('RLS') && (
+                <div className="mt-2 pt-2 border-t border-red-200/60 text-[11px] text-red-600 font-mono bg-white/70 p-2.5 rounded-lg">
+                  💡 Supabase SQL Editor에서 RLS 비활성화 쿼리를 실행해 주셔야 합니다. (채팅창 안내 참조)
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-6">
             {/* 제목 */}
@@ -181,7 +206,7 @@ export default function NewBoardPage() {
                   onClick={() => setLayout('shelf')}
                   className={`p-4 rounded-xl border text-left flex flex-col justify-between space-y-3 transition-all ${
                     layout === 'shelf'
-                      ? 'border-slate-900 bg-slate-50/50'
+                      ? 'border-slate-900 bg-slate-50'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
@@ -191,7 +216,7 @@ export default function NewBoardPage() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-slate-900">컬럼형 (Shelf)</p>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug font-normal">
                       모둠별, 단계별로 열을 나누어 정돈
                     </p>
                   </div>
@@ -202,7 +227,7 @@ export default function NewBoardPage() {
                   onClick={() => setLayout('wall')}
                   className={`p-4 rounded-xl border text-left flex flex-col justify-between space-y-3 transition-all ${
                     layout === 'wall'
-                      ? 'border-slate-900 bg-slate-50/50'
+                      ? 'border-slate-900 bg-slate-50'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
@@ -212,7 +237,7 @@ export default function NewBoardPage() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-slate-900">그리드 (Wall)</p>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug font-normal">
                       포스트잇이 차곡차곡 빈틈없이 배치
                     </p>
                   </div>
@@ -223,7 +248,7 @@ export default function NewBoardPage() {
                   onClick={() => setLayout('canvas')}
                   className={`p-4 rounded-xl border text-left flex flex-col justify-between space-y-3 transition-all ${
                     layout === 'canvas'
-                      ? 'border-slate-900 bg-slate-50/50'
+                      ? 'border-slate-900 bg-slate-50'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
@@ -233,7 +258,7 @@ export default function NewBoardPage() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold text-slate-900">자유 캔버스</p>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug font-normal">
                       원하는 위치로 자유롭게 드래그 배치
                     </p>
                   </div>
@@ -260,7 +285,7 @@ export default function NewBoardPage() {
                       <Lock className="w-3.5 h-3.5 text-slate-500" />
                       읽기 전용 잠금으로 시작
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
+                    <p className="text-[11px] text-slate-500 mt-0.5 font-normal">
                       학생들이 아직 글을 쓸 수 없게 차단하고 수업 시작 시 해제합니다.
                     </p>
                   </div>
@@ -278,7 +303,7 @@ export default function NewBoardPage() {
                       <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
                       게시물 승인제 적용
                     </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
+                    <p className="text-[11px] text-slate-500 mt-0.5 font-normal">
                       학생이 작성한 글을 선생님이 승인한 후에만 전체 학생에게 공개됩니다.
                     </p>
                   </div>
@@ -297,7 +322,7 @@ export default function NewBoardPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium transition-colors disabled:opacity-50"
+              className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium transition-colors disabled:opacity-50 shadow-xs"
             >
               {isSubmitting ? '생성 중...' : '보드 생성 완료'}
             </button>

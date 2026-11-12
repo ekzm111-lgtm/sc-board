@@ -20,6 +20,7 @@ export default function ClassesPage() {
   const [className, setClassName] = useState('');
   const [classDesc, setClassDesc] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const supabase = createClient();
 
@@ -62,25 +63,32 @@ export default function ClassesPage() {
     const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
     const code = `CLS-${randomSuffix}`;
 
+    setCreateError(null);
     try {
+      const isUuid = user.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id);
       const { error } = await supabase.from('classes').insert({
         name: className.trim(),
         description: classDesc.trim() || null,
-        teacher_id: user.id === 'admin-master' ? '00000000-0000-0000-0000-000000000000' : user.id,
+        teacher_id: isUuid ? user.id : null,
         code,
       });
 
       if (error) {
-        // FK 오류 방지 (관리자 마스터 세션 대응)
-        console.warn('Class insert fallback:', error);
+        console.warn('Class insert error:', error);
+        throw new Error(
+          error.code === '42501'
+            ? 'Supabase 데이터베이스 RLS 권한 제한으로 학급 생성이 차단되었습니다.'
+            : error.message
+        );
       }
 
       setClassName('');
       setClassDesc('');
       setShowModal(false);
       fetchClasses();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Class create error:', err);
+      setCreateError(err.message || '학급 생성 중 오류가 발생했습니다.');
     }
   };
 
@@ -212,6 +220,11 @@ export default function ClassesPage() {
             </div>
 
             <form onSubmit={handleCreateClass} className="space-y-4">
+              {createError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 leading-relaxed">
+                  {createError}
+                </div>
+              )}
               <div className="space-y-1.5">
                 <label className="block text-xs font-medium text-slate-700">
                   학급 이름
